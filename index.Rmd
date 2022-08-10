@@ -1,0 +1,395 @@
+---
+title: 'Using Modern Portfolio Theory for Cryptocurrencies'
+author: 'Mike Margolis'
+date: '`r format(Sys.Date(),"%B %d, %Y")` <br><br><br>'
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    fig_caption: yes
+    theme: cerulean
+    toc: no
+    toc_depth: 4
+    toc_float: no
+---
+$~$
+---
+
+```{r setup, include = FALSE}
+rm(list=ls())
+graphics.off()
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r, loadPackages}
+require(tidyverse)
+require(tidyquant)
+require(fPortfolio)
+require(PerformanceAnalytics)
+require(tbl2xts)
+require(ggthemes)
+require(timetk)
+require(PortfolioAnalytics)
+require(kableExtra)
+require(jtools)
+require(FinTS)
+require(rugarch)
+#require(openxlsx)
+#require(xlsx)
+require(readxl)
+```
+
+```{r, include=FALSE}
+print(getwd())
+```
+
+
+<br> <br> <br>
+
+***
+# Crypto MPT
+## Using Modern Portfolio Theory for Cryptocurrencies 
+***
+##### By: Mike Margolis
+
+<div align="left">
+
+<br> <br> <br> <br> <br>
+
+
+##### **Intro**
+In this project we will be applying Modern Portfolio Theory to cryptocurrencies. We will be using the Markowitz solution to determine optimal portfolio weights. These portfolios will take returns and risk into consideration. We read in the data from a Kagel Dataset.
+The data for each of the coins used in this research can be downloaded here:[link](https://www.kaggle.com/datasets/kaushiksuresh147/top-10-cryptocurrencies-historical-dataset)
+
+
+```{r, read in Bitcoin and Ethereum Excel sheet}
+BTC_ETH <- read_excel("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/BTC-ETH.xlsx")
+
+```
+
+
+To simplify the Markowitz solution and the optimal portfolio we will look at two coins Bitcoin (BTC) and Ethereum (ETH). We will then calculate the correlation matrix between the two coins to see how they are correlated.
+
+```{r get coins BTC and ETH}
+BE_returns <- BTC_ETH %>%
+  group_by(Symbol) %>%
+  tq_transmute(
+    select = Close,
+    mutate_fun = periodReturn,
+    period = "monthly",
+    type = "log",
+    col_rename = "monthly.returns"
+  )
+BE_returns %>%
+  group_by(Symbol) %>%
+  summarise(mean = mean(monthly.returns),
+            st.dev = sd(monthly.returns)) %>%
+  kable(format = "html",
+        table.attr = "style='width:30%;'",
+        caption = "Mean and standard deviation of returns") %>%
+  kableExtra::kable_styling()
+
+BE_Crypto <- BE_returns %>%
+  tbl_xts(cols_to_xts = monthly.returns, spread_by = Symbol)
+
+round(cor(BE_Crypto,BE_Crypto),digits=3)
+```
+
+***
+##### **Markowitz Frontier**
+Now we plot the frontier for these two assets where we have assumed that the annualized 1-month risk-free rate is 0.05%. In both plots, the minimum variance portfolio is shown as the red dot. On the first plot, BTC is the red dot, and ETH is the open yellow dot, and the optimal portfolio is the open cyan dot. On the second plot, 
+
+
+BTC is the dark blue diamond, ETH is the cyan diamond, and the optimal portfolio is the blue triangle. All of the Monte Carlo generated portfolios with $w \in [0,1]$ lie on the frontier.
+
+Note that the optimal portfolio has the highest expected excess return per unit of risk that we can obtain.
+
+```{r Mrk Opt BTC ETH, include=FALSE}
+BE_Return <- as.timeSeries(BE_Crypto)
+tgSpec <- portfolioSpec()
+setRiskFreeRate(tgSpec) <- .05 / 1200
+tgPortfolio <- tangencyPortfolio(data = BE_Return,
+                                 spec = tgSpec,
+                                 constraints = "LongOnly")
+```
+
+```{r}
+print(tgPortfolio)
+```
+
+```{r}
+shortSpec <- portfolioSpec()
+setNFrontierPoints(shortSpec) <- 20
+setSolver(shortSpec) <- "solveRshortExact"
+shortFrontier <- portfolioFrontier(data = BE_Return,
+                                   spec = shortSpec,
+                                   constraints = "Short")
+```
+
+```{r}
+print(shortFrontier)
+```
+
+***
+##### Here we can see the Efficient Frontier for Portflios that allow for Short-Selling
+
+
+```{r}
+tailoredFrontierPlot(object = shortFrontier,
+                     mText = "MV Portfolio - Short Constraints",
+                     risk = "Cov")
+```
+
+```{r, include=FALSE}
+
+tp_BE <- tangencyPortfolio(as.timeSeries(BE_Return),
+                           spec = portfolioSpec
+                           (portfolio = list(riskFreeRate = .05 / 1200)))
+frontier <- portfolioFrontier(as.timeSeries(BE_Return))
+```
+
+```{r}
+plot(frontier, which = c(1, 2, 3, 4, 7)) # select 1 and 3
+```
+
+The optimal portfolio weights are:
+
+```{r get_opt_weights BTC ETH}
+getWeights(tp_BE)
+```
+
+
+From the second graph we find interesting results. If we go all in on BTC (dark blue diamond), the return is lower than the minimum variance portfolio (red dot), but the risk is only slightly higher. Where as going all in on ETH is 10-20 percentage points more risky and the returns are only .4 percentage points higher. The blue triangle is the optimal portfolio it says go about 70% in BTC and about 30% in ETH. This is daily data and the returns are calculated monthly, the data we have is form January 2018 to now. Due to the volatility of cryptocurrencies results from this analysis changes slightly after each iteration.  
+
+```{r print_opt_weights BTC ETH}
+print(tgPortfolio)
+```
+
+***
+##### **Optimal Portfolio Weights**
+
+Lets see what an optimal portfolio would look like with a lot of coins. Yahoo doesn't have a lot of historical data on some coins so our analysis might only be restricted to certain coins with a lot of data, or a lot of coins with only 2-3 years of daily data. We have 10 coins in the analysis and the descriptions of each coin or below. We have daily data for these coins from January 2018 to now. We will use the close price of each coin for the analysis. 
+
+
+
+```{r, load in excel sheets with data for each coin}
+BNB <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx", sheet = 1)
+ADA <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =2)
+LINK <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =3)
+LTC <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =4)
+XRP <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =5)
+XLM <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =6)
+TRX <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =7)
+BTC <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =8)
+ETH <- read_xlsx("C:/Users/mikem/OneDrive/Desktop/Crypto RMD/ALT_coins.xlsx",sheet =9)
+```
+
+```{r}
+Alt_Coins <-BTC %>% full_join(BNB)
+Alt_Coins <-Alt_Coins %>% full_join(ADA)
+Alt_Coins <-Alt_Coins %>% full_join(LINK)
+Alt_Coins <-Alt_Coins %>% full_join(LTC)
+Alt_Coins <-Alt_Coins %>% full_join(XRP)
+Alt_Coins <-Alt_Coins %>% full_join(XLM)
+Alt_Coins <-Alt_Coins %>% full_join(TRX)
+Alt_Coins <-Alt_Coins %>% full_join(ETH)
+
+Alt_Coins <- subset(Alt_Coins, Date > "2018-02-02")
+
+```
+
+***
+Below are the daily logged close values for each coin.
+
+```{r plot_prices of 9 logged prices}
+Alt_Coins %>%
+  ggplot(aes(x = Date, y = log(Close), color = Symbol)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Logged Daily Crypto Prices",
+    x = "",
+    y = "Logged Close Prices",
+    color = ""
+  ) 
+```
+### What are these coins and what are they used for?
+##### Descriptions and Definitions are pulled in-part from [Investopedia](https://www.investopedia.com/)
+
+
+###### ADA 
+- The native token of Cardano. Cardano’s main applications are in identity management and trace-ability. The former application can be used to streamline and simplify processes that require the collection of data from multiple sources. The latter application can be used to track and audit a product’s manufacturing processes from provenance to finished goods and, potentially, eliminate the market for counterfeit goods.
+
+###### BNB 
+- The native token of the Binance block chain, initally based on the Ethereum network. Binance was created as a utility token for discounted trading fees in 2017, but its uses have expanded to numerous applications, including payments for transaction fees (on the Binance Chain), travel bookings accommodations (at sites such as TravelbyBit, Trip.io, and Travala.com), entertainment purposes (virtual gifts, card packs, lotteries), online services, and financial services (take out a loan at ETHLend or make investments at Moeda).
+
+###### BTC 
+- BitCoin is Bitcoin lol.
+
+
+###### ETH
+- Ethereum is Ethereum. Ethereum enables the deployment of smart contracts and decentralized applications (dApps) to be built and run without any downtime, fraud, control, or interference from a third party.7 Ethereum comes complete with its own programming language (Solidity) that runs on a blockchain, enabling developers to build and run distributed applications.
+
+
+###### LTC
+- Litecoin (LTC) is a cryptocurrency created from a fork in the Bitcoin blockchain in 2011. It was initially designed to address the developer's concerns that Bitcoin was becoming too centrally controlled, and to make it more difficult for large scale mining firms to gain the upper hand in mining. While eventually unsuccessful in preventing enterprise miners from taking over the lion's share of Litecoin mining, the cryptocurrency has reworked itself into a mineable coin and a peer-to-peer payment system. Litecoin has a faster transaction processing time compared to Bitcoin.
+
+###### XRP
+- XRP is a “bridge asset” or an asset that businesses and financial institutions can use as a bridge transfer between two different fiat currencies. In such a scenario, the financial institution can simply purchase an equivalent amount of XRP and send it through Ripple’s network. Ripple refers to it as “third-party liquidity provisioning” and states that it is ideal for banks that do not have a corresponding relationship with each other. XRP is 
+currently facing a lawsuit from the SEC. Personally I believe all data for XRP should have an (*) next to it due to the potential/real value of the coin will be revealed once the lawsuit reaches a conclusion. A situational forecast could help determine the future price, situation 1 Ripple(XRP) wins the suit, the price will probably sky rocket. Situation 2 the SEC wins the lawsuit and XRP's price will most likely fall tremendously. 
+
+###### LINK
+- Chainlink (LINK) is a cryptocurrency and technology platform that enables non-blockchain enterprises to securely connect with blockchain platforms. Chainlink is middle ware that connects blockchain-based smart contracts with external data, such as baseball scores or stock prices. Chainlink's LINK currency pays Chainlink network operators and collateralizes the network's smart contract agreements.Chainlink is known as a decentralized oracle network or blockchain abstraction layer. Chainlink uses blockchain technology to securely enable computations on and off blockchain, supporting what it calls hybrid smart contracts.
+
+###### XLM
+- The term Stellar cryptocurrency refers to a digital or virtual currency developed by Stellar Development Foundation. The organization's currency, which is called the lumen, is traded under the symbol XLM on various cryptocurrency exchanges. Lumens can be used by traders on the Stellar network, which is a blockchain-based distributed ledger network that connects banks, payments systems, and people to facilitate low-cost, cross-asset transfers of value, including payments. Stellar’s primary focus is on developing economies in the areas of remittances and bank loans to those who are outside of the scope of the banking services. Stellar doesn't charge individuals or institutions for using the network. Stellar supports a distributed exchange mode. This allows users to send payments in specific currencies even though they may hold credits in another, while the network automatically performs the forex conversion. The receiver can withdraw their currency equivalent through a partner institute like a bank. As a cross-border transfer and payment system that connects financial entities, Stellar aims to significantly reduce transaction costs and time lags. While Stellar works just like technologies like Bitcoin, its key distinguishing feature is its consensus protocol.
+
+###### TRX
+- Tron is a blockchain-based decentralized digital platform with its own cryptocurrency, called Tronix or TRX. Founded in 2017 by a Singapore non-profit organization, the Tron Foundation, Tron aims to host a global entertainment system for the cost-effective sharing of digital content.Tron uses the features of the blockchain and peer-to-peer (P2P) network technology to eliminate the middleman and allow content creators to sell their work directly to consumers. Software developers use the Solidity programming language to create apps that are hosted on the Tron platform.
+
+
+```{r reformat_returns 9 coins, message=FALSE, warning=FALSE}
+Alt_returns_monthly <- Alt_Coins %>% 
+  group_by(Symbol) %>%
+  tq_transmute(
+    select = Close,
+    mutate_fun = periodReturn,
+    period = "monthly",
+    type = "log",
+    col_rename = "Rm"
+  ) 
+
+Alt_returns_wide <- Alt_returns_monthly %>% 
+  spread(key = Symbol, value = Rm) %>%
+  tk_xts(date_var = Date) 
+```
+
+```{r reformat_returns for corr matrix, message=FALSE, warning=FALSE, include=FALSE}
+Alt_returns_monthly_1 <- Alt_Coins %>%
+  group_by(Symbol) %>%
+  tq_transmute(
+    select = Close,
+    mutate_fun = periodReturn,
+    period = "monthly",
+    type = "log",
+  )
+Alt_returns_monthly_1 %>%
+group_by(Symbol) %>%
+  summarise(mean = mean(monthly.returns),
+            st.dev = sd(monthly.returns)) 
+
+Returns_Alt_Coins <- Alt_returns_monthly_1 %>%
+  tbl_xts(cols_to_xts = monthly.returns, spread_by = Symbol)
+```
+
+***
+###### **Correlation Matrix for the 9 Coins:**
+
+```{r corr matrix printed}
+round(cor(Returns_Alt_Coins,Returns_Alt_Coins),digits=3)
+```
+***
+###### **Compute Sharpe ratios for each asset with an average risk-free monthly rate of 0.5%**
+
+```{r SharpeRatios with BTC}
+  SharpeRatio(Alt_returns_wide, Rf = .005, p = 0.95, digits = 4, FUN = "StdDev") %>% 
+  kable(format = "html", table.attr = "style='width:50%;'",
+      caption = "Asset Sharpe Ratios") %>% 
+  kableExtra::kable_styling()
+```
+
+Very interesting Sharp Ratios. Binance Coin and ChainLink 
+stands out.
+
+```{r plot_MEF, message=FALSE, warning=FALSE}
+# get optimal portfolio
+rm(opt,port_spec)
+data <- Alt_returns_wide
+port_spec <- portfolio.spec(colnames(data))
+port_spec <- add.constraint(portfolio = port_spec, type= "long_only")
+port_spec <- add.constraint(portfolio = port_spec, type= "full_investment")
+port_spec <- add.objective(portfolio = port_spec,
+                           type = "risk",
+                           name = "StdDev")
+port_spec <- add.objective(portfolio = port_spec,
+                           type = "return",
+                           name = "mean")
+opt <- optimize.portfolio(data, portfolio = port_spec,
+                          optimize_method = "random",
+                          search_size = 10000,
+                          trace=TRUE)
+chart.RiskReward(opt, risk.col = "StdDev", return.col = "mean",
+                 chart.assets = TRUE)
+```
+
+```{r print_weights 9 coins}
+extractWeights(opt) %>% 
+  kable(format = "html", table.attr = "style='width:30%;'",
+      caption = "Optimal Long-Only Portfolio Weights") %>% 
+  kableExtra::kable_styling()
+```
+
+
+WOW. Very interesting. Since the data will change daily we get varying results. At around 3pm today the optimal portfolio weights had 0% in ETH. As of 4:30pm (After 4pm when the stock market closes and Yahoo Fianace calculates a cyrpto currencies daily "close" price) the ETH's weight jumped to 10%. 
+
+Right of the bat the interpretation of this output is, regardless of investment amount: put ~69% in BTC, 16% in BNB, 10% in ETH, etc.
+
+A lack of ETH in the portfolio doesn't surprise me. The coins are the two leaders in the market and their returns and risks are definitely correlation. The program chooses one or the other and the lower risk of BTC with higher predicted returns (marginally higher Sharpe Ratio) says if you have to chose one (and apparently you should) chose BTC. Binance is fairly stable so some inclusion is expected but the amount is still shocking. This is probably due to its higher Sharpe Ratio than ETH, however it should be correlated with ETH which is correlated with BTC. But math is math and if we go on the daily data based on "close" prices this is what the optimal portfolio looks like. XRP and ADA show up as well which is interesting since XRP is currently in a lawsuit and ADA is a coin with a lot of "meme" propulsion around it. 
+
+Lets see what happens when we leave BTC out of the portfolio. The Sharpe Ratios don't change but the optimal weights for the portfolio will change. 
+
+```{r get coins not BTC}
+Alt_Coins_2 <- subset(Alt_Coins, Symbol != "BTC")
+```
+
+```{r reformat_returns1, message=FALSE, warning=FALSE}
+CryptoALT_returns_monthly <- Alt_Coins_2 %>%
+  group_by(Symbol) %>%
+  tq_transmute(
+    select = Close,
+    mutate_fun = periodReturn,
+    period = "monthly",
+    type = "log",
+    col_rename = "Rm"
+  )
+CryptoALT_returns_wide <- CryptoALT_returns_monthly %>% 
+  spread(key = Symbol, value = Rm) %>%
+  tk_xts(date_var = date)
+```
+
+```{r plot_MEF1, message=FALSE, warning=FALSE}
+# get optimal portfolio
+rm(opt,port_spec)
+data <- CryptoALT_returns_wide
+port_spec <- portfolio.spec(colnames(data))
+port_spec <- add.constraint(portfolio = port_spec, type= "long_only")
+port_spec <- add.constraint(portfolio = port_spec, type= "full_investment")
+port_spec <- add.objective(portfolio = port_spec,
+                           type = "risk",
+                           name = "StdDev")
+port_spec <- add.objective(portfolio = port_spec,
+                           type = "return",
+                           name = "mean")
+optALT <- optimize.portfolio(data, portfolio = port_spec,
+                          optimize_method = "random",
+                          search_size = 10000,
+                          trace=TRUE)
+chart.RiskReward(optALT, risk.col = "StdDev", return.col = "mean",
+                 chart.assets = TRUE)
+```
+
+
+```{r print_weights1}
+extractWeights(optALT) %>% 
+  kable(format = "html", table.attr = "style='width:30%;'",
+      caption = "Optimal Long-Only Portfolio Weights") %>% 
+  kableExtra::kable_styling()
+```
+
+
+With the behemoth that is BTC out of the way we see other coins start to flourish. Binance Coin (BNB), Ethereum (ETH) and ChainLink (LINK) take the spot light. A optimal Markowitz portfolio will opt to not include two coins that have highly correlated returns due to correlated risk. If two coins move up together they also fall together. We would opt to include coins with lower returns to hedge risk of choosing coins that have correlated risk.The results of this analysis will change slightly as more daily data comes in and the market these coins operate in is highly volatile. 
+
+***
