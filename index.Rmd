@@ -4,15 +4,13 @@ author: 'Mike Margolis'
 date: '`r format(Sys.Date(),"%B %d, %Y")` <br><br><br>'
 output:
   html_document:
-    code_folding: hide
     df_print: paged
+    code_folding: hide
+    toc: no
     fig_caption: yes
     theme: cerulean
-    toc: no
-    toc_depth: 4
     toc_float: no
----
-$~$
+
 ---
 
 ```{r setup, include = FALSE}
@@ -46,7 +44,7 @@ print(getwd())
 ```
 
 
-<br> <br> <br>
+<div align="center">
 
 ***
 # Crypto MPT
@@ -54,7 +52,7 @@ print(getwd())
 ***
 ##### By: Mike Margolis
 
-<div align="left">
+<div align="Left">
 
 <br> <br> <br> <br> <br>
 
